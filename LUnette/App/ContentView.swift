@@ -6,18 +6,38 @@ struct ContentView: View {
     @State private var showSettings = false
     @State private var isTargeted = false
 
+    @AppStorage("appTheme") private var appTheme = "system"
+
+    private var colorScheme: ColorScheme? {
+        switch appTheme {
+        case "dark":  return .dark
+        case "light": return .light
+        default:      return nil
+        }
+    }
+
+    // Supported drop / open-panel types (audio + video)
     private let supportedTypes: [UTType] = [
         .audio, .mp3, .aiff, .wav,
-        UTType("public.flac") ?? .audio,
-        UTType("com.apple.m4a-audio") ?? .audio,
-        UTType("public.aac-audio") ?? .audio,
+        UTType("public.flac")          ?? .audio,
+        UTType("com.apple.m4a-audio")  ?? .audio,
+        UTType("public.aac-audio")     ?? .audio,
+        .movie,                         // generic video (mp4, mov, m4v, avi, …)
+        .mpeg4Movie,
+        .quickTimeMovie,
+        UTType("public.avi")           ?? .movie,
+        UTType("com.apple.m4v-video")  ?? .movie,
     ]
 
     var body: some View {
         ZStack {
-            if coordinator.reports.isEmpty && coordinator.analysisState == .idle {
+            // Main content — drive solely from coordinator state
+            if let report = coordinator.selectedReport {
+                // Drilled into a file from batch table
+                SingleFileView(report: report)
+            } else if coordinator.reports.isEmpty {
                 DropTargetView(isTargeted: $isTargeted)
-            } else if coordinator.reports.count == 1 && !coordinator.showBatch {
+            } else if coordinator.reports.count == 1 {
                 SingleFileView(report: coordinator.reports[0])
             } else {
                 BatchTableView()
@@ -40,15 +60,16 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 800, minHeight: 600)
+        .preferredColorScheme(colorScheme)
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button {
-                    coordinator.reset()
+                    goBack()
                 } label: {
                     Image(systemName: "chevron.left")
                 }
-                .disabled(coordinator.reports.isEmpty)
-                .keyboardShortcut("w", modifiers: .command)
+                .disabled(!canGoBack)
+                .keyboardShortcut("[", modifiers: .command)
             }
 
             ToolbarItem(placement: .primaryAction) {
@@ -77,21 +98,38 @@ struct ContentView: View {
         }
     }
 
+    // MARK: - Navigation
+
+    private var canGoBack: Bool {
+        coordinator.selectedReport != nil || !coordinator.reports.isEmpty
+    }
+
+    private func goBack() {
+        if coordinator.selectedReport != nil {
+            // Drill-down from batch → return to batch table
+            coordinator.selectedReport = nil
+        } else {
+            // Batch or single view → return to drop target
+            coordinator.reset()
+        }
+    }
+
+    // MARK: - File picker
+
     private func openFilePicker() {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = true
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = true
-        panel.allowedContentTypes = supportedTypes
-        panel.title = "Choose Audio Files"
+        panel.canChooseDirectories    = true
+        panel.canChooseFiles          = true
+        panel.allowedContentTypes     = supportedTypes
+        panel.title = "Choose Audio or Video Files"
 
         if panel.runModal() == .OK {
-            let urls = panel.urls
-            Task {
-                await coordinator.analyzeFiles(urls)
-            }
+            Task { await coordinator.analyzeFiles(panel.urls) }
         }
     }
+
+    // MARK: - Drag & drop
 
     private func handleDrop(providers: [NSItemProvider]) {
         var urls: [URL] = []
@@ -110,9 +148,7 @@ struct ContentView: View {
         }
 
         group.notify(queue: .main) {
-            Task {
-                await coordinator.analyzeFiles(urls)
-            }
+            Task { await coordinator.analyzeFiles(urls) }
         }
     }
 }

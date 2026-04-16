@@ -90,8 +90,7 @@ struct BatchTableView: View {
         } primaryAction: { ids in
             if ids.count == 1, let id = ids.first,
                let report = coordinator.reports.first(where: { $0.id == id }) {
-                coordinator.reports = [report]
-                coordinator.showBatch = false
+                coordinator.selectedReport = report
             }
         }
     }
