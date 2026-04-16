@@ -75,14 +75,17 @@ struct BadgeView: View {
             .padding(.vertical, 3)
             .background(badgeColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 4))
             .foregroundStyle(badgeColor)
-            .frame(width: 40)
+            .frame(minWidth: 40)
     }
 
     private var badgeColor: Color {
         switch badge {
-        case .pass: return .green
-        case .warn: return .orange
-        case .fail: return .red
+        case .pass:  return .green
+        case .warn:  return .orange
+        case .fail:  return .red
+        case .ok:    return .green
+        case .loud:  return .orange
+        case .quiet: return .orange
         }
     }
 }

@@ -1,4 +1,5 @@
 import AVFoundation
+import AudioToolbox
 
 /// Reads an audio file in 65536-frame chunks, converting to interleaved Float32 at native sample rate.
 struct AudioReader {
@@ -8,7 +9,7 @@ struct AudioReader {
     struct Metadata {
         let codec: String
         let sampleRate: Double
-        let bitDepth: Int
+        let bitDepth: Int       // 0 = lossy/unknown
         let channels: Int
         let duration: TimeInterval
     }
@@ -16,14 +17,20 @@ struct AudioReader {
     /// Opens the file and returns its metadata without reading samples.
     static func metadata(for url: URL) throws -> Metadata {
         let file = try AVAudioFile(forReading: url)
-        let fmt  = file.fileFormat       // on-disk format (for bit depth / codec)
+        let fmt  = file.fileFormat
         let sr   = fmt.sampleRate
         let ch   = Int(fmt.channelCount)
         let dur  = Double(file.length) / sr
+
+        // Use ExtAudioFile to read the on-disk ASBD — more reliable than AVAudioFile.fileFormat
+        // for compressed formats (FLAC, ALAC, etc.) where mBitsPerChannel may be 0 in the
+        // AVAudioFormat ASBD but is correctly populated by ExtAudioFile.
+        let depth = extAudioFileBitDepth(url: url)
+
         return Metadata(
             codec:      codecName(for: url, format: fmt),
             sampleRate: sr,
-            bitDepth:   bitDepth(from: fmt),
+            bitDepth:   depth,
             channels:   ch,
             duration:   dur
         )
@@ -33,9 +40,9 @@ struct AudioReader {
     static func stream(url: URL, handler: (UnsafePointer<Float>, Int) throws -> Void) throws {
         let file = try AVAudioFile(forReading: url)
 
-        // AVAudioFile.read(into:) always decodes into processingFormat (deinterleaved Float32).
-        // We convert from that to interleaved Float32 for libebur128.
-        let srcFormat = file.processingFormat   // Float32, deinterleaved, native SR
+        // AVAudioFile.read(into:) always decodes into processingFormat (Float32, deinterleaved).
+        // We then reinterleave for libebur128.
+        let srcFormat = file.processingFormat
         let ch        = srcFormat.channelCount
         let sr        = srcFormat.sampleRate
 
@@ -48,8 +55,6 @@ struct AudioReader {
             throw AnalysisError.unsupportedFormat("Cannot create interleaved Float32 format")
         }
 
-        // For mono the formats are identical (interleaved == deinterleaved for 1 ch),
-        // so the converter is a no-op but still correct.
         guard let converter = AVAudioConverter(from: srcFormat, to: dstFormat) else {
             throw AnalysisError.unsupportedFormat("AVAudioConverter init failed")
         }
@@ -87,7 +92,6 @@ struct AudioReader {
             if status == .error { throw AnalysisError.unsupportedFormat("AVAudioConverter failed") }
             guard outBuf.frameLength > 0 else { continue }
 
-            // interleaved: all samples in floatChannelData[0]
             guard let floatData = outBuf.floatChannelData else { continue }
             try handler(UnsafePointer(floatData[0]), Int(outBuf.frameLength))
         }
@@ -95,17 +99,19 @@ struct AudioReader {
 
     // MARK: - Private helpers
 
-    private static func bitDepth(from format: AVAudioFormat) -> Int {
-        let bits = format.streamDescription.pointee.mBitsPerChannel
-        if bits > 0 { return Int(bits) }
-        switch format.commonFormat {
-        case .pcmFormatFloat32:  return 32
-        case .pcmFormatFloat64:  return 64
-        case .pcmFormatInt16:    return 16
-        case .pcmFormatInt32:    return 32
-        case .otherFormat:       return 0
-        @unknown default:        return 0
+    /// Uses ExtAudioFile to read mBitsPerChannel from the file's actual data format.
+    /// This is reliable for PCM (WAV, AIFF, FLAC, ALAC) and returns 0 for lossy codecs.
+    private static func extAudioFileBitDepth(url: URL) -> Int {
+        var extRef: ExtAudioFileRef?
+        guard ExtAudioFileOpenURL(url as CFURL, &extRef) == noErr, let ref = extRef else { return 0 }
+        defer { ExtAudioFileDispose(ref) }
+
+        var asbd = AudioStreamBasicDescription()
+        var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
+        guard ExtAudioFileGetProperty(ref, kExtAudioFileProperty_FileDataFormat, &size, &asbd) == noErr else {
+            return 0
         }
+        return Int(asbd.mBitsPerChannel)
     }
 
     private static func codecName(for url: URL, format: AVAudioFormat) -> String {

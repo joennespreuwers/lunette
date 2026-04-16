@@ -20,8 +20,7 @@ struct SingleFileView: View {
                         .frame(minWidth: 320)
                 }
 
-                // Loudness plot full-width
-                LoudnessPlotView(report: report)
+                // Loudness plot — TODO: implement in a future milestone
             }
             .padding(20)
         }
@@ -59,7 +58,7 @@ struct SingleFileView: View {
 
             infoChip(report.codec)
             infoChip("\(Int(report.sampleRate / 1000)) kHz")
-            infoChip("\(report.bitDepth)-bit")
+            infoChip(report.bitDepthLabel)
             infoChip(durationString(report.duration))
 
             if report.clipFlag == .error {
