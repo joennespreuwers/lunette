@@ -9,8 +9,7 @@ struct LUnetteApp: App {
             ContentView()
                 .environmentObject(coordinator)
         }
-        .windowStyle(.hiddenTitleBar)
-        .windowResizability(.contentSize)
+        .windowResizability(.contentMinSize)
         .commands {
             CommandGroup(replacing: .newItem) { }
         }

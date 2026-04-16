@@ -16,7 +16,7 @@ struct AudioReader {
     /// Opens the file and returns its metadata without reading samples.
     static func metadata(for url: URL) throws -> Metadata {
         let file = try AVAudioFile(forReading: url)
-        let fmt  = file.fileFormat
+        let fmt  = file.fileFormat       // on-disk format (for bit depth / codec)
         let sr   = fmt.sampleRate
         let ch   = Int(fmt.channelCount)
         let dur  = Double(file.length) / sr
@@ -31,60 +31,65 @@ struct AudioReader {
 
     /// Streams interleaved Float32 chunks to `handler`. Throws on format errors.
     static func stream(url: URL, handler: (UnsafePointer<Float>, Int) throws -> Void) throws {
-        let file       = try AVAudioFile(forReading: url)
-        let fileFormat = file.fileFormat
-        let sr         = fileFormat.sampleRate
-        let ch         = fileFormat.channelCount
+        let file = try AVAudioFile(forReading: url)
 
-        guard let targetFormat = AVAudioFormat(
+        // AVAudioFile.read(into:) always decodes into processingFormat (deinterleaved Float32).
+        // We convert from that to interleaved Float32 for libebur128.
+        let srcFormat = file.processingFormat   // Float32, deinterleaved, native SR
+        let ch        = srcFormat.channelCount
+        let sr        = srcFormat.sampleRate
+
+        guard let dstFormat = AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: sr,
             channels: ch,
             interleaved: true
         ) else {
-            throw AnalysisError.unsupportedFormat("Cannot create Float32 interleaved format")
+            throw AnalysisError.unsupportedFormat("Cannot create interleaved Float32 format")
         }
 
-        guard let converter = AVAudioConverter(from: fileFormat, to: targetFormat) else {
-            throw AnalysisError.unsupportedFormat("AVAudioConverter init failed for \(fileFormat)")
+        // For mono the formats are identical (interleaved == deinterleaved for 1 ch),
+        // so the converter is a no-op but still correct.
+        guard let converter = AVAudioConverter(from: srcFormat, to: dstFormat) else {
+            throw AnalysisError.unsupportedFormat("AVAudioConverter init failed")
         }
 
         let capacity = AVAudioFrameCount(chunkSize)
 
-        guard let inputBuf = AVAudioPCMBuffer(pcmFormat: fileFormat,  frameCapacity: capacity),
-              let outputBuf = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: capacity) else {
+        guard let readBuf = AVAudioPCMBuffer(pcmFormat: srcFormat, frameCapacity: capacity),
+              let outBuf  = AVAudioPCMBuffer(pcmFormat: dstFormat, frameCapacity: capacity) else {
             throw AnalysisError.unsupportedFormat("Cannot allocate PCM buffers")
         }
 
         while file.framePosition < file.length {
-            let remaining   = AVAudioFrameCount(file.length - file.framePosition)
+            let remaining    = AVAudioFrameCount(file.length - file.framePosition)
             let framesToRead = min(capacity, remaining)
-            inputBuf.frameLength = 0
+            readBuf.frameLength = 0
 
-            try file.read(into: inputBuf, frameCount: framesToRead)
-            guard inputBuf.frameLength > 0 else { break }
+            try file.read(into: readBuf, frameCount: framesToRead)
+            guard readBuf.frameLength > 0 else { break }
 
             var inputConsumed = false
             var convError: NSError?
-            outputBuf.frameLength = 0
+            outBuf.frameLength = 0
 
-            let status = converter.convert(to: outputBuf, error: &convError) { _, outStatus in
+            let status = converter.convert(to: outBuf, error: &convError) { _, outStatus in
                 if inputConsumed {
                     outStatus.pointee = .noDataNow
                     return nil
                 }
                 inputConsumed = true
                 outStatus.pointee = .haveData
-                return inputBuf
+                return readBuf
             }
 
             if let err = convError { throw err }
-            if status == .error { throw AnalysisError.unsupportedFormat("AVAudioConverter error") }
-            guard outputBuf.frameLength > 0 else { continue }
+            if status == .error { throw AnalysisError.unsupportedFormat("AVAudioConverter failed") }
+            guard outBuf.frameLength > 0 else { continue }
 
-            // interleaved: all channels packed in floatChannelData[0]
-            guard let floatData = outputBuf.floatChannelData else { continue }
-            try handler(UnsafePointer(floatData[0]), Int(outputBuf.frameLength))
+            // interleaved: all samples in floatChannelData[0]
+            guard let floatData = outBuf.floatChannelData else { continue }
+            try handler(UnsafePointer(floatData[0]), Int(outBuf.frameLength))
         }
     }
 

@@ -51,11 +51,6 @@ struct ContentView: View {
                 .keyboardShortcut("w", modifiers: .command)
             }
 
-            ToolbarItem(placement: .principal) {
-                Text("LUnette")
-                    .font(.headline)
-            }
-
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     openFilePicker()
