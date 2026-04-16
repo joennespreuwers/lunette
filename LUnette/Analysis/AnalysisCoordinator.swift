@@ -40,7 +40,7 @@ final class AnalysisCoordinator: ObservableObject {
         let total = expanded.count
         var completed = 0
 
-        await withTaskGroup(of: Result<AudioFileReport, (URL, Error)>.self) { group in
+        await withTaskGroup(of: (AudioFileReport?, URL, Error?).self) { group in
             var pending = expanded.makeIterator()
             var running = 0
 
@@ -50,12 +50,10 @@ final class AnalysisCoordinator: ObservableObject {
                 running += 1
             }
 
-            for await result in group {
-                // Process result
-                switch result {
-                case .success(let report):
+            for await (report, url, error) in group {
+                if let report {
                     reports.append(report)
-                case .failure(let (url, error)):
+                } else if let error {
                     errors.append((url, error))
                 }
                 completed += 1
@@ -76,18 +74,18 @@ final class AnalysisCoordinator: ObservableObject {
 
     // MARK: - File-level analysis (nonisolated, runs off main actor)
 
-    private static func analyse(url: URL) async -> Result<AudioFileReport, (URL, Error)> {
+    private static func analyse(url: URL) async -> (AudioFileReport?, URL, Error?) {
         do {
             let report = try await Task.detached(priority: .userInitiated) {
                 try analyseSync(url: url)
             }.value
-            return .success(report)
+            return (report, url, nil)
         } catch {
-            return .failure((url, error))
+            return (nil, url, error)
         }
     }
 
-    private static func analyseSync(url: URL) throws -> AudioFileReport {
+    nonisolated private static func analyseSync(url: URL) throws -> AudioFileReport {
         // 1. Metadata
         let meta = try AudioReader.metadata(for: url)
 

@@ -94,11 +94,12 @@ struct AudioReader {
         let bits = format.streamDescription.pointee.mBitsPerChannel
         if bits > 0 { return Int(bits) }
         switch format.commonFormat {
-        case .pcmFormatFloat32: return 32
-        case .pcmFormatFloat64: return 64
-        case .pcmFormatInt16:   return 16
-        case .pcmFormatInt32:   return 32
-        @unknown default:       return 0
+        case .pcmFormatFloat32:  return 32
+        case .pcmFormatFloat64:  return 64
+        case .pcmFormatInt16:    return 16
+        case .pcmFormatInt32:    return 32
+        case .otherFormat:       return 0
+        @unknown default:        return 0
         }
     }
 

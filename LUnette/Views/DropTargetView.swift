@@ -7,7 +7,7 @@ struct DropTargetView: View {
         VStack(spacing: 20) {
             Image(systemName: "waveform.circle")
                 .font(.system(size: 72))
-                .foregroundStyle(isTargeted ? .accent : .secondary)
+                .foregroundStyle(isTargeted ? Color.accentColor : Color.secondary)
                 .animation(.easeInOut(duration: 0.15), value: isTargeted)
 
             VStack(spacing: 6) {

@@ -19,11 +19,11 @@ final class LoudnessMeter {
         self.sampleRate = sampleRate
         self.framesPerSample = Int(Double(sampleRate) * 0.1)
 
-        let mode: Int32 = EBUR128_MODE_I.rawValue
+        let mode = Int32(bitPattern: EBUR128_MODE_I.rawValue
                         | EBUR128_MODE_LRA.rawValue
                         | EBUR128_MODE_TRUE_PEAK.rawValue
                         | EBUR128_MODE_S.rawValue
-                        | EBUR128_MODE_M.rawValue
+                        | EBUR128_MODE_M.rawValue)
 
         guard let ptr = ebur128_init(channels, UInt(sampleRate), mode) else {
             throw AnalysisError.libebur128InitFailed
