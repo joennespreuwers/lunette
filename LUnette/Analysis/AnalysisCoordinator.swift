@@ -138,9 +138,7 @@ final class AnalysisCoordinator: ObservableObject {
             plr:                  plr,
             momentaryMax:         mMax,
             shortTermMax:         sMax,
-            clipFlag:             clip,
-            momentaryHistory:     meter.momentaryHistory,
-            shortTermHistory:     meter.shortTermHistory
+            clipFlag:             clip
         )
     }
 

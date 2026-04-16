@@ -17,7 +17,6 @@
 		AA000008 /* SingleFileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000008 /* SingleFileView.swift */; };
 		AA000009 /* MetricsCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000009 /* MetricsCardView.swift */; };
 		AA000010 /* StandardsComplianceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000010 /* StandardsComplianceView.swift */; };
-		AA000011 /* LoudnessPlotView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000011 /* LoudnessPlotView.swift */; };
 		AA000012 /* BatchTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000012 /* BatchTableView.swift */; };
 		AA000013 /* SettingsPopoverView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000013 /* SettingsPopoverView.swift */; };
 		AA000014 /* ExportFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000014 /* ExportFormatter.swift */; };
@@ -36,7 +35,6 @@
 		AF000008 /* SingleFileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SingleFileView.swift; sourceTree = "<group>"; };
 		AF000009 /* MetricsCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsCardView.swift; sourceTree = "<group>"; };
 		AF000010 /* StandardsComplianceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StandardsComplianceView.swift; sourceTree = "<group>"; };
-		AF000011 /* LoudnessPlotView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoudnessPlotView.swift; sourceTree = "<group>"; };
 		AF000012 /* BatchTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchTableView.swift; sourceTree = "<group>"; };
 		AF000013 /* SettingsPopoverView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsPopoverView.swift; sourceTree = "<group>"; };
 		AF000014 /* ExportFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportFormatter.swift; sourceTree = "<group>"; };
@@ -99,8 +97,7 @@
 				AF000008 /* SingleFileView.swift */,
 				AF000009 /* MetricsCardView.swift */,
 				AF000010 /* StandardsComplianceView.swift */,
-				AF000011 /* LoudnessPlotView.swift */,
-				AF000012 /* BatchTableView.swift */,
+					AF000012 /* BatchTableView.swift */,
 				AF000013 /* SettingsPopoverView.swift */,
 			);
 			path = Views;
@@ -226,8 +223,7 @@
 				AA000008 /* SingleFileView.swift in Sources */,
 				AA000009 /* MetricsCardView.swift in Sources */,
 				AA000010 /* StandardsComplianceView.swift in Sources */,
-				AA000011 /* LoudnessPlotView.swift in Sources */,
-				AA000012 /* BatchTableView.swift in Sources */,
+					AA000012 /* BatchTableView.swift in Sources */,
 				AA000013 /* SettingsPopoverView.swift in Sources */,
 				AA000014 /* ExportFormatter.swift in Sources */,
 				AA000015 /* ebur128.c in Sources */,
