@@ -606,7 +606,8 @@ static void ebur128_check_true_peak(ebur128_state* st, size_t frames) {
 #define TURN_OFF_FTZ _mm_setcsr(mxcsr);
 #define FLUSH_MANUALLY
 #else
-#warning "manual FTZ is being used, please enable SSE2 (-msse2 -mfpmath=sse)"
+/* Manual FTZ active. On arm64/Apple Silicon SSE2 does not exist; this path is correct.
+   On x86_64 you can suppress this by adding -msse2 -mfpmath=sse to C compiler flags. */
 #define TURN_ON_FTZ
 #define TURN_OFF_FTZ
 #define FLUSH_MANUALLY                                                         \

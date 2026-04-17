@@ -15,28 +15,46 @@ struct BatchTableView: View {
         coordinator.reports.sorted(using: sortOrder)
     }
 
-    var body: some View {
-        VStack(spacing: 0) {
-            tableContent
-        }
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    columnToggleMenu
-                } label: {
-                    Image(systemName: "table.badge.more")
-                }
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button { saveCSV() } label: {
-                    Image(systemName: "square.and.arrow.up")
-                }
-            }
-        }
-        .navigationTitle("Batch Analysis (\(coordinator.reports.count) files)")
+    /// The single selected report, if exactly one row is highlighted
+    private var singleSelection: AudioFileReport? {
+        guard selection.count == 1, let id = selection.first else { return nil }
+        return coordinator.reports.first(where: { $0.id == id })
     }
 
-    // Break out the table into its own computed property to help the type checker
+    var body: some View {
+        tableContent
+            .toolbar {
+                ToolbarItem(placement: .navigation) {
+                    Button("Open") {
+                        openSelected()
+                    }
+                    .disabled(singleSelection == nil)
+                    .keyboardShortcut(.return, modifiers: [])
+                }
+
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        columnToggleMenu
+                    } label: {
+                        Image(systemName: "table.badge.more")
+                    }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button { saveCSV() } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                }
+            }
+    }
+
+    private func openSelected() {
+        if let report = singleSelection {
+            coordinator.selectedReport = report
+        }
+    }
+
+    // MARK: - Table
+
     private var tableContent: some View {
         Table(sorted, selection: $selection, sortOrder: $sortOrder) {
             TableColumn("Track", value: \.filename) { r in
@@ -85,15 +103,22 @@ struct BatchTableView: View {
                 monoText(showDuration ? durationStr(r.duration) : "")
             }.width(showDuration ? 70 : 0)
         }
+        // Double-click opens the file; right-click shows column toggles
         .contextMenu(forSelectionType: AudioFileReport.ID.self) { _ in
             columnToggleMenu
+            Divider()
+            Button("Open") { openSelected() }
+                .disabled(singleSelection == nil)
         } primaryAction: { ids in
-            if ids.count == 1, let id = ids.first,
+            // primaryAction fires on double-click; use first id in case of multi-select
+            if let id = ids.first,
                let report = coordinator.reports.first(where: { $0.id == id }) {
                 coordinator.selectedReport = report
             }
         }
     }
+
+    // MARK: - Helpers
 
     @ViewBuilder
     private var columnToggleMenu: some View {
