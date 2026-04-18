@@ -5,11 +5,6 @@ struct BatchTableView: View {
     @State private var sortOrder = [KeyPathComparator(\AudioFileReport.integratedLUFS, order: .reverse)]
     @State private var selection = Set<AudioFileReport.ID>()
 
-    @State private var showMomentaryMax = false
-    @State private var showShortTermMax = false
-    @State private var showCodec        = false
-    @State private var showSampleRate   = false
-    @State private var showDuration     = true
 
     private var sorted: [AudioFileReport] {
         coordinator.reports.sorted(using: sortOrder)
@@ -94,30 +89,12 @@ struct BatchTableView: View {
                 monoText(String(format: "%+.1f dB", r.plr))
             }.width(80)
 
-            TableColumn("M-Max", value: \.momentaryMax) { r in
-                monoText(showMomentaryMax ? lufsStr(r.momentaryMax) : "")
-            }.width(showMomentaryMax ? 100 : 0)
-
-            TableColumn("S-Max", value: \.shortTermMax) { r in
-                monoText(showShortTermMax ? lufsStr(r.shortTermMax) : "")
-            }.width(showShortTermMax ? 100 : 0)
-
-            TableColumn("Codec", value: \.codec) { r in
-                monoText(showCodec ? r.codec : "")
-            }.width(showCodec ? 80 : 0)
-
-            TableColumn("kHz", value: \.sampleRate) { r in
-                monoText(showSampleRate ? "\(Int(r.sampleRate / 1000))" : "")
-            }.width(showSampleRate ? 50 : 0)
-
             TableColumn("Duration", value: \.duration) { r in
-                monoText(showDuration ? durationStr(r.duration) : "")
-            }.width(showDuration ? 70 : 0)
+                monoText(durationStr(r.duration))
+            }.width(70)
         }
         // Double-click opens the file; right-click shows column toggles + delete
         .contextMenu(forSelectionType: AudioFileReport.ID.self) { ids in
-            columnToggleMenu
-            Divider()
             Button("Open") { openSelected() }
                 .disabled(singleSelection == nil)
             Divider()
@@ -135,16 +112,6 @@ struct BatchTableView: View {
     }
 
     // MARK: - Helpers
-
-    @ViewBuilder
-    private var columnToggleMenu: some View {
-        Toggle("Momentary Max",  isOn: $showMomentaryMax)
-        Toggle("Short-term Max", isOn: $showShortTermMax)
-        Divider()
-        Toggle("Codec",          isOn: $showCodec)
-        Toggle("Sample Rate",    isOn: $showSampleRate)
-        Toggle("Duration",       isOn: $showDuration)
-    }
 
     @ViewBuilder
     private func clipIcon(_ flag: ClipFlag) -> some View {
