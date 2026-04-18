@@ -23,6 +23,7 @@ struct BatchTableView: View {
 
     var body: some View {
         tableContent
+            .onDeleteCommand { deleteSelected() }
             .toolbar {
                 ToolbarItem(placement: .navigation) {
                     Button("Open") {
@@ -30,6 +31,16 @@ struct BatchTableView: View {
                     }
                     .disabled(singleSelection == nil)
                     .keyboardShortcut(.return, modifiers: [])
+                }
+
+                ToolbarItem(placement: .destructiveAction) {
+                    Button(role: .destructive) {
+                        deleteSelected()
+                    } label: {
+                        Image(systemName: "trash")
+                    }
+                    .disabled(selection.isEmpty)
+                    .keyboardShortcut(.delete, modifiers: [])
                 }
 
                 ToolbarItem(placement: .primaryAction) {
@@ -53,6 +64,13 @@ struct BatchTableView: View {
         }
     }
 
+    private func deleteSelected() {
+        coordinator.reports.removeAll { selection.contains($0.id) }
+        selection.removeAll()
+        // If we just deleted everything, coordinator state cleans up automatically
+        // via ContentView's view switching logic.
+    }
+
     // MARK: - Table
 
     private var tableContent: some View {
@@ -63,7 +81,7 @@ struct BatchTableView: View {
                     clipIcon(r.clipFlag)
                 }
             }
-            .width(min: 160, ideal: 220)
+            .width(200)
 
             TableColumn("Integrated", value: \.integratedLUFS) { r in
                 monoText(lufsStr(r.integratedLUFS))
@@ -103,14 +121,19 @@ struct BatchTableView: View {
                 monoText(showDuration ? durationStr(r.duration) : "")
             }.width(showDuration ? 70 : 0)
         }
-        // Double-click opens the file; right-click shows column toggles
-        .contextMenu(forSelectionType: AudioFileReport.ID.self) { _ in
+        // Double-click opens the file; right-click shows column toggles + delete
+        .contextMenu(forSelectionType: AudioFileReport.ID.self) { ids in
             columnToggleMenu
             Divider()
             Button("Open") { openSelected() }
                 .disabled(singleSelection == nil)
+            Divider()
+            Button("Delete", role: .destructive) {
+                coordinator.reports.removeAll { ids.contains($0.id) }
+                selection.subtract(ids)
+            }
+            .disabled(ids.isEmpty)
         } primaryAction: { ids in
-            // primaryAction fires on double-click; use first id in case of multi-select
             if let id = ids.first,
                let report = coordinator.reports.first(where: { $0.id == id }) {
                 coordinator.selectedReport = report

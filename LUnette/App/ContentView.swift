@@ -4,7 +4,6 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @EnvironmentObject var coordinator: AnalysisCoordinator
     @State private var showSettings = false
-    @State private var isTargeted = false
 
     @AppStorage("appTheme") private var appTheme = "system"
 
@@ -36,7 +35,7 @@ struct ContentView: View {
                 // Drilled into a file from batch table
                 SingleFileView(report: report)
             } else if coordinator.reports.isEmpty {
-                DropTargetView(isTargeted: $isTargeted)
+                DropTargetView()
             } else if coordinator.reports.count == 1 {
                 SingleFileView(report: coordinator.reports[0])
             } else {
@@ -92,10 +91,6 @@ struct ContentView: View {
                 }
             }
         }
-        .onDrop(of: supportedTypes.map(\.identifier), isTargeted: $isTargeted) { providers in
-            handleDrop(providers: providers)
-            return true
-        }
     }
 
     // MARK: - Navigation
@@ -129,26 +124,4 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Drag & drop
-
-    private func handleDrop(providers: [NSItemProvider]) {
-        var urls: [URL] = []
-        let group = DispatchGroup()
-
-        for provider in providers {
-            group.enter()
-            provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
-                if let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) {
-                    urls.append(url)
-                } else if let url = item as? URL {
-                    urls.append(url)
-                }
-                group.leave()
-            }
-        }
-
-        group.notify(queue: .main) {
-            Task { await coordinator.analyzeFiles(urls) }
-        }
-    }
 }

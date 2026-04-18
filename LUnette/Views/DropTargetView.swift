@@ -1,39 +1,25 @@
 import SwiftUI
 
 struct DropTargetView: View {
-    @Binding var isTargeted: Bool
 
     var body: some View {
         VStack(spacing: 20) {
             Image(systemName: "waveform.circle")
                 .font(.system(size: 72))
-                .foregroundStyle(isTargeted ? Color.accentColor : Color.secondary)
-                .animation(.easeInOut(duration: 0.15), value: isTargeted)
+                .foregroundStyle(Color.secondary)
 
             VStack(spacing: 6) {
-                Text("Drop Audio Files Here")
+                Text("No Files Loaded")
                     .font(.title2.bold())
-                Text("or press ⌘O to open files")
+                Text("Press ⌘O to open audio or video files")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
 
-            Text("WAV · AIFF · FLAC · MP3 · AAC · M4A · CAF")
+            Text("WAV · AIFF · FLAC · MP3 · AAC · M4A · MP4 · MOV")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .strokeBorder(
-                    isTargeted ? Color.accentColor : Color.secondary.opacity(0.3),
-                    style: StrokeStyle(lineWidth: 2, dash: [8, 6])
-                )
-                .padding(24)
-        )
-        .background(
-            isTargeted ? Color.accentColor.opacity(0.05) : Color.clear
-        )
-        .animation(.easeInOut(duration: 0.15), value: isTargeted)
     }
 }
