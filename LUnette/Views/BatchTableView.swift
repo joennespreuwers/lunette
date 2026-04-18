@@ -44,13 +44,6 @@ struct BatchTableView: View {
                 }
 
                 ToolbarItem(placement: .primaryAction) {
-                    Menu {
-                        columnToggleMenu
-                    } label: {
-                        Image(systemName: "table.badge.more")
-                    }
-                }
-                ToolbarItem(placement: .primaryAction) {
                     Button { saveCSV() } label: {
                         Image(systemName: "square.and.arrow.up")
                     }

@@ -36,8 +36,6 @@ struct ContentView: View {
                 SingleFileView(report: report)
             } else if coordinator.reports.isEmpty {
                 DropTargetView()
-            } else if coordinator.reports.count == 1 {
-                SingleFileView(report: coordinator.reports[0])
             } else {
                 BatchTableView()
             }
