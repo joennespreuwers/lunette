@@ -3,10 +3,6 @@ import SwiftUI
 struct SettingsPopoverView: View {
     @AppStorage("defaultStandard")               private var defaultStandard     = "ebu_r128"
     @AppStorage("truePeakWarningThreshold")      private var tpWarnThreshold     = -1.0
-    @AppStorage("showPlotReferenceLinesEBU")     private var showEBU             = true
-    @AppStorage("showPlotReferenceLinesSpotify") private var showSpotify         = false
-    @AppStorage("showPlotReferenceLinesApple")   private var showApple           = false
-    @AppStorage("showPlotReferenceLinesYouTube") private var showYouTube         = false
     @AppStorage("appTheme")                      private var appTheme            = "system"
 
     var body: some View {
@@ -41,19 +37,6 @@ struct SettingsPopoverView: View {
                         .frame(width: 75, alignment: .trailing)
                 }
             }
-
-            Divider()
-
-            // Plot reference line toggles
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Plot Reference Lines")
-                    .font(.subheadline.bold())
-                Toggle("EBU R128 (−23 LUFS)",   isOn: $showEBU)
-                Toggle("Spotify (−14 LUFS)",     isOn: $showSpotify)
-                Toggle("Apple Music (−16 LUFS)", isOn: $showApple)
-                Toggle("YouTube (−14 LUFS)",     isOn: $showYouTube)
-            }
-            .toggleStyle(.checkbox)
 
             Divider()
 
