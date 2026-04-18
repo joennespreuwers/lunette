@@ -128,15 +128,28 @@ struct AudioReader {
             throw AnalysisError.unsupportedFormat("No audio track in \(url.lastPathComponent)")
         }
 
+        // Pin SR and channel count explicitly so the decoded output matches
+        // what we already told libebur128 (via videoMetadata).
+        let formatDescs = try await track.load(.formatDescriptions)
+        var nativeSR: Double = 48000
+        var nativeCh: Int    = 2
+        if let desc = formatDescs.first,
+           let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc) {
+            if asbd.pointee.mSampleRate      > 0 { nativeSR = asbd.pointee.mSampleRate }
+            if asbd.pointee.mChannelsPerFrame > 0 { nativeCh = Int(asbd.pointee.mChannelsPerFrame) }
+        }
+
         let reader = try AVAssetReader(asset: asset)
 
-        // Output: interleaved Float32 PCM, native sample rate + channel count
+        // Output: interleaved Float32 PCM at the file's native SR and channel count.
         let outputSettings: [String: Any] = [
-            AVFormatIDKey:              Int(kAudioFormatLinearPCM),
-            AVLinearPCMBitDepthKey:     32,
-            AVLinearPCMIsFloatKey:      true,
+            AVFormatIDKey:               Int(kAudioFormatLinearPCM),
+            AVSampleRateKey:             nativeSR,
+            AVNumberOfChannelsKey:       nativeCh,
+            AVLinearPCMBitDepthKey:      32,
+            AVLinearPCMIsFloatKey:       true,
             AVLinearPCMIsNonInterleaved: false,
-            AVLinearPCMIsBigEndianKey:  false
+            AVLinearPCMIsBigEndianKey:   false
         ]
         let output = AVAssetReaderTrackOutput(track: track, outputSettings: outputSettings)
         output.alwaysCopiesSampleData = false
