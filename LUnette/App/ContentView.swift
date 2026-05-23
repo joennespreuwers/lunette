@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 struct ContentView: View {
     @EnvironmentObject var coordinator: AnalysisCoordinator
     @State private var showSettings = false
+    @State private var isDropTargeted = false
 
     @AppStorage("appTheme") private var appTheme = "system"
 
@@ -41,9 +42,18 @@ struct ContentView: View {
             if coordinator.analysisState == .running {
                 progressOverlay
             }
+
+            if isDropTargeted {
+                dropHighlight
+            }
         }
         .frame(minWidth: 800.0, minHeight: 600.0)
         .preferredColorScheme(colorScheme)
+        .onDrop(
+            of: [.fileURL],
+            isTargeted: $isDropTargeted,
+            perform: handleDrop
+        )
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button(action: goBack) {
@@ -96,6 +106,13 @@ struct ContentView: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12.0))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.black.opacity(0.3))
+    }
+
+    private var dropHighlight: some View {
+        RoundedRectangle(cornerRadius: 12.0)
+            .strokeBorder(Color.accentColor, lineWidth: 3.0)
+            .padding(6.0)
+            .allowsHitTesting(false)
     }
 
     private var errorBanner: some View {
@@ -175,6 +192,31 @@ struct ContentView: View {
 
         if panel.runModal() == .OK {
             coordinator.start(urls: panel.urls)
+        }
+    }
+
+    // MARK: - Drag and drop
+
+    private func handleDrop(providers: [NSItemProvider]) -> Bool {
+        Task {
+            var urls: [URL] = []
+            for provider in providers {
+                if let url = await Self.loadFileURL(from: provider) {
+                    urls.append(url)
+                }
+            }
+            if !urls.isEmpty {
+                coordinator.start(urls: urls)
+            }
+        }
+        return true
+    }
+
+    private static func loadFileURL(from provider: NSItemProvider) async -> URL? {
+        await withCheckedContinuation { continuation in
+            _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                continuation.resume(returning: url)
+            }
         }
     }
 }

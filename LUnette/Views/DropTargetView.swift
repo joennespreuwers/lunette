@@ -12,7 +12,7 @@ struct DropTargetView: View {
                 Text("No Files Loaded")
                     .font(.title2.bold())
 
-                Text("Press ⌘O to open audio or video files")
+                Text("Press ⌘O or drop files to open")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
