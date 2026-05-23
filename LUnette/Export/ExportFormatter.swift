@@ -36,9 +36,13 @@ enum ExportFormatter {
         for std in LoudnessStandard.all {
             let badge    = std.badge(for: report)
             let delta    = std.gainDelta(for: report)
-            let deltaStr = String(format: delta >= 0 ? "+%.1f" : "%.1f", delta)
-            let name     = std.name.padding(toLength: 14, withPad: " ", startingAt: 0)
-            let target   = String(format: "%5d", Int(std.targetLUFS))
+            let deltaStr = String(format: delta >= 0.0 ? "+%.1f" : "%.1f", delta)
+            let name     = std.name.padding(
+                toLength: 14,
+                withPad: " ",
+                startingAt: 0
+            )
+            let target = String(format: "%5d", Int(std.targetLUFS))
             lines.append("  \(name) \(target) LUFS  \(deltaStr) LU  \(badge.label)")
         }
         lines.append(String(repeating: "─", count: 44))
@@ -51,10 +55,10 @@ enum ExportFormatter {
     static func csv(for reports: [AudioFileReport]) -> String {
         var rows: [String] = []
         let header = [
-            "Filename","Codec","SampleRate","BitDepth","Channels","Duration",
-            "Integrated_LUFS","LRA_LU","LRA_Low","LRA_High","LRA_Threshold","Int_Threshold",
-            "TruePeak_L_dBTP","TruePeak_R_dBTP","TruePeak_Max_dBTP",
-            "PLR_dB","Momentary_Max_LUFS","ShortTerm_Max_LUFS","Clip_Flag"
+            "Filename", "Codec", "SampleRate", "BitDepth", "Channels", "Duration",
+            "Integrated_LUFS", "LRA_LU", "LRA_Low", "LRA_High", "LRA_Threshold", "Int_Threshold",
+            "TruePeak_L_dBTP", "TruePeak_R_dBTP", "TruePeak_Max_dBTP",
+            "PLR_dB", "Momentary_Max_LUFS", "ShortTerm_Max_LUFS", "Clip_Flag"
         ].joined(separator: ",")
         rows.append(header)
 
@@ -90,15 +94,23 @@ enum ExportFormatter {
     private static func lufsStr(_ v: Double) -> String {
         v.isFinite ? String(format: "%.1f LUFS", v) : "—"
     }
+
     private static func dbTPStr(_ v: Double) -> String {
         v.isFinite ? String(format: "%.2f dBTP", v) : "—"
     }
+
     private static func format(_ v: Double) -> String {
         v.isFinite ? String(format: "%.2f", v) : ""
     }
+
     private static func clipLabel(_ f: ClipFlag) -> String {
-        switch f { case .none: return ""; case .warning: return "WARN"; case .error: return "CLIP" }
+        switch f {
+        case .none:    return ""
+        case .warning: return "WARN"
+        case .error:   return "CLIP"
+        }
     }
+
     private static func durationString(_ t: TimeInterval) -> String {
         let h = Int(t) / 3600
         let m = (Int(t) % 3600) / 60
@@ -106,12 +118,21 @@ enum ExportFormatter {
         if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
         return String(format: "%d:%02d", m, s)
     }
+
+    /// Escapes a CSV field, also prefixing `=`, `+`, `-`, `@` with a single quote so
+    /// spreadsheet apps treat the cell as text rather than a formula (CSV injection).
     private static func csvEscape(_ s: String) -> String {
-        if s.contains(",") || s.contains("\"") || s.contains("\n") {
-            return "\"" + s.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+        var safe = s
+        if let first = safe.first, "=+-@".contains(first) {
+            safe = "'" + safe
         }
-        return s
+        if safe.contains(",") || safe.contains("\"") || safe.contains("\n") {
+            let escaped = safe.replacingOccurrences(of: "\"", with: "\"\"")
+            return "\"" + escaped + "\""
+        }
+        return safe
     }
+
     private static func isoDate() -> String {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withFullDate, .withTime, .withColonSeparatorInTime]

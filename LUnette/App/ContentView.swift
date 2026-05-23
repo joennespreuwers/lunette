@@ -21,48 +21,32 @@ struct ContentView: View {
         UTType("public.flac")          ?? .audio,
         UTType("com.apple.m4a-audio")  ?? .audio,
         UTType("public.aac-audio")     ?? .audio,
-        .movie,                         // generic video (mp4, mov, m4v, avi, …)
+        .movie,
         .mpeg4Movie,
         .quickTimeMovie,
         UTType("public.avi")           ?? .movie,
-        UTType("com.apple.m4v-video")  ?? .movie,
+        UTType("com.apple.m4v-video")  ?? .movie
     ]
 
     var body: some View {
         ZStack {
-            // Main content — drive solely from coordinator state
-            if let report = coordinator.selectedReport {
-                // Drilled into a file from batch table
-                SingleFileView(report: report)
-            } else if coordinator.reports.isEmpty {
-                DropTargetView()
-            } else {
-                BatchTableView()
+            VStack(spacing: 0) {
+                if !coordinator.errors.isEmpty {
+                    errorBanner
+                }
+
+                mainContent
             }
 
-            // Progress overlay
             if coordinator.analysisState == .running {
-                VStack(spacing: 12) {
-                    ProgressView(value: coordinator.progress)
-                        .progressViewStyle(.linear)
-                        .frame(width: 300)
-                    Text(coordinator.statusMessage)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(20)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(.black.opacity(0.3))
+                progressOverlay
             }
         }
-        .frame(minWidth: 800, minHeight: 600)
+        .frame(minWidth: 800.0, minHeight: 600.0)
         .preferredColorScheme(colorScheme)
         .toolbar {
             ToolbarItem(placement: .navigation) {
-                Button {
-                    goBack()
-                } label: {
+                Button(action: goBack) {
                     Image(systemName: "chevron.left")
                 }
                 .disabled(!canGoBack)
@@ -70,24 +54,98 @@ struct ContentView: View {
             }
 
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    openFilePicker()
-                } label: {
+                Button(action: openFilePicker) {
                     Image(systemName: "plus")
                 }
                 .keyboardShortcut("o", modifiers: .command)
             }
 
             ToolbarItem(placement: .primaryAction) {
-                Button {
-                    showSettings.toggle()
-                } label: {
+                Button(action: { showSettings.toggle() }) {
                     Image(systemName: "gear")
                 }
                 .popover(isPresented: $showSettings) {
                     SettingsPopoverView()
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var mainContent: some View {
+        if let report = coordinator.selectedReport {
+            SingleFileView(report: report)
+        } else if coordinator.reports.isEmpty {
+            DropTargetView()
+        } else {
+            BatchTableView()
+        }
+    }
+
+    private var progressOverlay: some View {
+        VStack(spacing: 12.0) {
+            ProgressView(value: coordinator.progress)
+                .progressViewStyle(.linear)
+                .frame(width: 300.0)
+
+            Text(coordinator.statusMessage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(20.0)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12.0))
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(.black.opacity(0.3))
+    }
+
+    private var errorBanner: some View {
+        VStack(alignment: .leading, spacing: 8.0) {
+            HStack {
+                Label(
+                    "\(coordinator.errors.count) file\(coordinator.errors.count == 1 ? "" : "s") failed",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.subheadline.bold())
+                .foregroundStyle(.orange)
+
+                Spacer()
+
+                Button(action: coordinator.clearErrors) {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 4.0) {
+                    ForEach(Array(coordinator.errors.enumerated()), id: \.offset) { item in
+                        errorRow(url: item.element.0, error: item.element.1)
+                    }
+                }
+            }
+            .frame(maxHeight: 100.0)
+        }
+        .padding(12.0)
+        .background(.regularMaterial)
+    }
+
+    private func errorRow(
+        url: URL,
+        error: Error
+    ) -> some View {
+        HStack(alignment: .top, spacing: 8.0) {
+            Text(url.lastPathComponent)
+                .font(.caption.monospaced())
+                .lineLimit(1)
+
+            Text("—")
+                .foregroundStyle(.tertiary)
+
+            Text(error.localizedDescription)
+                .font(.caption)
+                .foregroundStyle(.red)
+                .lineLimit(2)
         }
     }
 
@@ -99,10 +157,8 @@ struct ContentView: View {
 
     private func goBack() {
         if coordinator.selectedReport != nil {
-            // Drill-down from batch → return to batch table
             coordinator.selectedReport = nil
         } else {
-            // Batch or single view → return to drop target
             coordinator.reset()
         }
     }
@@ -118,8 +174,7 @@ struct ContentView: View {
         panel.title = "Choose Audio or Video Files"
 
         if panel.runModal() == .OK {
-            Task { await coordinator.analyzeFiles(panel.urls) }
+            coordinator.start(urls: panel.urls)
         }
     }
-
 }

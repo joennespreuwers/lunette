@@ -19,7 +19,10 @@ final class LoudnessMeter {
     private var stFramesSince: Int = 0
     private let stFramesPerSample: Int  // 1000 ms
 
-    init(channels: UInt32, sampleRate: UInt32) throws {
+    init(
+        channels: UInt32,
+        sampleRate: UInt32
+    ) throws {
         self.channels = channels
         self.sampleRate = sampleRate
         self.mFramesPerSample  = max(1, Int(Double(sampleRate) * 0.1))
@@ -41,31 +44,52 @@ final class LoudnessMeter {
         ebur128_destroy(&statePtr)
     }
 
-    func addFrames(_ samples: UnsafePointer<Float>, frameCount: Int) throws {
+    /// Feeds frames to libebur128 sliced on the M/S sampling boundaries, so the
+    /// momentary and short-term history arrays are populated at the cadence the
+    /// downstream M-max / S-max readouts expect — independent of the caller's
+    /// chunk size.
+    func addFrames(
+        _ samples: UnsafePointer<Float>,
+        frameCount: Int
+    ) throws {
         guard let st = statePtr else { throw AnalysisError.libebur128InitFailed }
 
-        let result = ebur128_add_frames_float(st, samples, frameCount)
-        guard result == EBUR128_SUCCESS.rawValue else {
-            throw AnalysisError.libebur128AddFramesFailed(result)
-        }
+        let channelsInt = Int(channels)
+        var offset = 0
+        var remaining = frameCount
 
-        mFramesSince  += frameCount
-        stFramesSince += frameCount
+        while remaining > 0 {
+            let toNextM = mFramesPerSample - mFramesSince
+            let toNextS = stFramesPerSample - stFramesSince
+            let take = min(remaining, min(toNextM, toNextS))
 
-        if mFramesSince >= mFramesPerSample {
-            mFramesSince = 0
-            var m = 0.0
-            if ebur128_loudness_momentary(st, &m) == EBUR128_SUCCESS.rawValue {
-                momentaryHistory.append(m)
+            let slicePtr = samples.advanced(by: offset * channelsInt)
+            let result = ebur128_add_frames_float(st, slicePtr, take)
+            guard result == EBUR128_SUCCESS.rawValue else {
+                throw AnalysisError.libebur128AddFramesFailed(result)
             }
-        }
 
-        if stFramesSince >= stFramesPerSample {
-            stFramesSince = 0
-            var s = 0.0
-            if ebur128_loudness_shortterm(st, &s) == EBUR128_SUCCESS.rawValue {
-                shortTermHistory.append(s)
+            mFramesSince += take
+            stFramesSince += take
+
+            if mFramesSince >= mFramesPerSample {
+                mFramesSince -= mFramesPerSample
+                var m = 0.0
+                if ebur128_loudness_momentary(st, &m) == EBUR128_SUCCESS.rawValue {
+                    momentaryHistory.append(m)
+                }
             }
+
+            if stFramesSince >= stFramesPerSample {
+                stFramesSince -= stFramesPerSample
+                var s = 0.0
+                if ebur128_loudness_shortterm(st, &s) == EBUR128_SUCCESS.rawValue {
+                    shortTermHistory.append(s)
+                }
+            }
+
+            offset += take
+            remaining -= take
         }
     }
 
@@ -102,30 +126,19 @@ final class LoudnessMeter {
     /// aligned to the first sample, while we sample at fixed 1 s clock ticks. The LRA value
     /// from ebur128_loudness_range() is authoritative; lraLow/lraHigh are derived.
     func lraDetails() -> (low: Double, high: Double, threshold: Double, integratedThreshold: Double) {
-        // Pass 1: absolute gate at −70 LUFS
-        let absGated = shortTermHistory.filter { $0.isFinite && $0 >= -70.0 }
+        let absGated = shortTermHistory.filter({ $0.isFinite && $0 >= -70.0 })
 
-        var low = -70.0, high = -70.0, relGate = -70.0
+        var low = -70.0
+        var high = -70.0
+        var relGate = -70.0
 
         if !absGated.isEmpty {
-            // Pass 2: relative gate — mean energy of abs-gated set, then −20 LU
             let meanEnergy = absGated
-                .map { pow(10.0, $0 / 10.0) }
+                .map({ pow(10.0, $0 / 10.0) })
                 .reduce(0.0, +) / Double(absGated.count)
             relGate = 10.0 * log10(max(meanEnergy, 1e-10)) - 20.0
 
-            let relGated = absGated.filter { $0 >= relGate }.sorted()
-
-            #if DEBUG
-            print("""
-            [LRA debug] st-history: \(shortTermHistory.count) samples, \
-            abs-gated: \(absGated.count), rel-gated: \(relGated.count), \
-            relGate: \(String(format: "%.2f", relGate)) LUFS
-            """)
-            if let mn = relGated.first, let mx = relGated.last {
-                print("[LRA debug] relGated range: \(String(format: "%.2f", mn))…\(String(format: "%.2f", mx)) LUFS")
-            }
-            #endif
+            let relGated = absGated.filter({ $0 >= relGate }).sorted()
 
             if !relGated.isEmpty {
                 low  = relGated[max(0, Int(Double(relGated.count) * 0.10))]

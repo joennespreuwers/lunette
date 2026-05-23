@@ -2,15 +2,16 @@ import SwiftUI
 
 struct BatchTableView: View {
     @EnvironmentObject var coordinator: AnalysisCoordinator
+    @AppStorage("truePeakWarningThreshold") private var tpWarnThreshold: Double = -1.0
+
     @State private var sortOrder = [KeyPathComparator(\AudioFileReport.integratedLUFS, order: .reverse)]
     @State private var selection = Set<AudioFileReport.ID>()
-
 
     private var sorted: [AudioFileReport] {
         coordinator.reports.sorted(using: sortOrder)
     }
 
-    /// The single selected report, if exactly one row is highlighted
+    /// The single selected report, if exactly one row is highlighted.
     private var singleSelection: AudioFileReport? {
         guard selection.count == 1, let id = selection.first else { return nil }
         return coordinator.reports.first(where: { $0.id == id })
@@ -18,20 +19,16 @@ struct BatchTableView: View {
 
     var body: some View {
         tableContent
-            .onDeleteCommand { deleteSelected() }
+            .onDeleteCommand(perform: deleteSelected)
             .toolbar {
                 ToolbarItem(placement: .navigation) {
-                    Button("Open") {
-                        openSelected()
-                    }
-                    .disabled(singleSelection == nil)
-                    .keyboardShortcut(.return, modifiers: [])
+                    Button("Open", action: openSelected)
+                        .disabled(singleSelection == nil)
+                        .keyboardShortcut(.return, modifiers: [])
                 }
 
                 ToolbarItem(placement: .destructiveAction) {
-                    Button(role: .destructive) {
-                        deleteSelected()
-                    } label: {
+                    Button(role: .destructive, action: deleteSelected) {
                         Image(systemName: "trash")
                     }
                     .disabled(selection.isEmpty)
@@ -39,7 +36,7 @@ struct BatchTableView: View {
                 }
 
                 ToolbarItem(placement: .primaryAction) {
-                    Button { saveCSV() } label: {
+                    Button(action: saveCSV) {
                         Image(systemName: "square.and.arrow.up")
                     }
                 }
@@ -53,10 +50,8 @@ struct BatchTableView: View {
     }
 
     private func deleteSelected() {
-        coordinator.reports.removeAll { selection.contains($0.id) }
+        coordinator.reports.removeAll(where: { selection.contains($0.id) })
         selection.removeAll()
-        // If we just deleted everything, coordinator state cleans up automatically
-        // via ContentView's view switching logic.
     }
 
     // MARK: - Table
@@ -64,42 +59,49 @@ struct BatchTableView: View {
     private var tableContent: some View {
         Table(sorted, selection: $selection, sortOrder: $sortOrder) {
             TableColumn("Track", value: \.filename) { r in
-                HStack(spacing: 6) {
+                HStack(spacing: 6.0) {
                     Text(r.filename).lineLimit(1)
+
                     clipIcon(r.clipFlag)
                 }
             }
-            .width(200)
+            .width(200.0)
 
             TableColumn("Integrated", value: \.integratedLUFS) { r in
                 monoText(lufsStr(r.integratedLUFS))
-            }.width(110)
+            }
+            .width(110.0)
 
             TableColumn("LRA", value: \.lra) { r in
                 monoText(String(format: "%.1f LU", r.lra))
-            }.width(80)
+            }
+            .width(80.0)
 
             TableColumn("True Peak", value: \.truePeakMax) { r in
                 Text(dbTPStr(r.truePeakMax))
                     .font(.system(.body, design: .monospaced).monospacedDigit())
-                    .foregroundStyle(r.truePeakMax > -1 ? .orange : .primary)
-            }.width(100)
+                    .foregroundStyle(r.truePeakMax > tpWarnThreshold ? .orange : .primary)
+            }
+            .width(100.0)
 
             TableColumn("PLR", value: \.plr) { r in
                 monoText(String(format: "%+.1f dB", r.plr))
-            }.width(80)
+            }
+            .width(80.0)
 
             TableColumn("Duration", value: \.duration) { r in
                 monoText(durationStr(r.duration))
-            }.width(70)
+            }
+            .width(70.0)
         }
-        // Double-click opens the file; right-click shows column toggles + delete
         .contextMenu(forSelectionType: AudioFileReport.ID.self) { ids in
-            Button("Open") { openSelected() }
+            Button("Open", action: openSelected)
                 .disabled(singleSelection == nil)
+
             Divider()
+
             Button("Delete", role: .destructive) {
-                coordinator.reports.removeAll { ids.contains($0.id) }
+                coordinator.reports.removeAll(where: { ids.contains($0.id) })
                 selection.subtract(ids)
             }
             .disabled(ids.isEmpty)
@@ -116,9 +118,16 @@ struct BatchTableView: View {
     @ViewBuilder
     private func clipIcon(_ flag: ClipFlag) -> some View {
         switch flag {
-        case .error:   Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
-        case .warning: Image(systemName: "exclamationmark.triangle").foregroundStyle(.orange)
-        case .none:    EmptyView()
+        case .error:
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.red)
+
+        case .warning:
+            Image(systemName: "exclamationmark.triangle")
+                .foregroundStyle(.orange)
+
+        case .none:
+            EmptyView()
         }
     }
 
@@ -129,11 +138,14 @@ struct BatchTableView: View {
     private func lufsStr(_ v: Double) -> String {
         v.isFinite ? String(format: "%.1f LUFS", v) : "—"
     }
+
     private func dbTPStr(_ v: Double) -> String {
         v.isFinite ? String(format: "%.2f dBTP", v) : "—"
     }
+
     private func durationStr(_ t: TimeInterval) -> String {
-        let m = Int(t) / 60, s = Int(t) % 60
+        let m = Int(t) / 60
+        let s = Int(t) % 60
         return Int(t) >= 3600
             ? String(format: "%d:%02d:%02d", Int(t) / 3600, m % 60, s)
             : String(format: "%d:%02d", m, s)

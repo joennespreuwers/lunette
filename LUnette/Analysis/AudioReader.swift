@@ -4,7 +4,7 @@ import CoreMedia
 
 /// Reads an audio or video file in chunks, converting to interleaved Float32.
 /// Audio files use AVAudioFile. Video files use AVAssetReader to extract the audio track.
-struct AudioReader {
+enum AudioReader {
 
     static let chunkSize = 65536
 
@@ -19,12 +19,14 @@ struct AudioReader {
     static func metadata(for url: URL) async throws -> Metadata {
         if isVideoFile(url) {
             return try await videoMetadata(for: url)
-        } else {
-            return try audioFileMetadata(for: url)
         }
+        return try audioFileMetadata(for: url)
     }
 
-    static func stream(url: URL, handler: (UnsafePointer<Float>, Int) throws -> Void) async throws {
+    static func stream(
+        url: URL,
+        handler: (UnsafePointer<Float>, Int) throws -> Void
+    ) async throws {
         if isVideoFile(url) {
             try await streamVideo(url: url, handler: handler)
         } else {
@@ -49,27 +51,39 @@ struct AudioReader {
         )
     }
 
-    private static func streamAudio(url: URL, handler: (UnsafePointer<Float>, Int) throws -> Void) throws {
+    private static func streamAudio(
+        url: URL,
+        handler: (UnsafePointer<Float>, Int) throws -> Void
+    ) throws {
         let file      = try AVAudioFile(forReading: url)
-        let srcFormat = file.processingFormat   // Float32, deinterleaved, native SR
+        let srcFormat = file.processingFormat
         let ch        = srcFormat.channelCount
         let sr        = srcFormat.sampleRate
 
         guard let dstFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32, sampleRate: sr, channels: ch, interleaved: true
-        ) else { throw AnalysisError.unsupportedFormat("Cannot create interleaved Float32 format") }
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: sr,
+            channels: ch,
+            interleaved: true
+        ) else {
+            throw AnalysisError.unsupportedFormat("Cannot create interleaved Float32 format")
+        }
 
         guard let converter = AVAudioConverter(from: srcFormat, to: dstFormat) else {
             throw AnalysisError.unsupportedFormat("AVAudioConverter init failed")
         }
 
         let capacity = AVAudioFrameCount(chunkSize)
-        guard let readBuf = AVAudioPCMBuffer(pcmFormat: srcFormat,  frameCapacity: capacity),
-              let outBuf  = AVAudioPCMBuffer(pcmFormat: dstFormat,  frameCapacity: capacity) else {
+        guard
+            let readBuf = AVAudioPCMBuffer(pcmFormat: srcFormat, frameCapacity: capacity),
+            let outBuf  = AVAudioPCMBuffer(pcmFormat: dstFormat, frameCapacity: capacity)
+        else {
             throw AnalysisError.unsupportedFormat("Cannot allocate PCM buffers")
         }
 
         while file.framePosition < file.length {
+            try Task.checkCancellation()
+
             let remaining    = AVAudioFrameCount(file.length - file.framePosition)
             let framesToRead = min(capacity, remaining)
             readBuf.frameLength = 0
@@ -81,8 +95,13 @@ struct AudioReader {
             outBuf.frameLength = 0
 
             let status = converter.convert(to: outBuf, error: &convError) { _, outStatus in
-                if inputConsumed { outStatus.pointee = .noDataNow; return nil }
-                inputConsumed = true; outStatus.pointee = .haveData; return readBuf
+                if inputConsumed {
+                    outStatus.pointee = .noDataNow
+                    return nil
+                }
+                inputConsumed = true
+                outStatus.pointee = .haveData
+                return readBuf
             }
 
             if let err = convError { throw err }
@@ -95,57 +114,69 @@ struct AudioReader {
 
     // MARK: - Video path (AVAssetReader)
 
-    private static func videoMetadata(for url: URL) async throws -> Metadata {
-        let asset       = AVURLAsset(url: url)
+    private struct VideoFormat {
+        let sampleRate: Double
+        let channels: Int
+        let bitDepth: Int
+    }
+
+    /// Resolves the audio track and its PCM format from a video asset. The fallback values
+    /// here are the single source of truth — they must match between metadata and stream
+    /// extraction, otherwise libebur128 is initialised with a sample rate that disagrees
+    /// with what AVAssetReader subsequently outputs.
+    private static func videoAudioFormat(
+        for asset: AVURLAsset
+    ) async throws -> (track: AVAssetTrack, format: VideoFormat) {
         let audioTracks = try await asset.loadTracks(withMediaType: .audio)
         guard let track = audioTracks.first else {
-            throw AnalysisError.unsupportedFormat("No audio track in \(url.lastPathComponent)")
+            throw AnalysisError.unsupportedFormat("No audio track in \(asset.url.lastPathComponent)")
         }
-        let duration    = try await asset.load(.duration)
         let formatDescs = try await track.load(.formatDescriptions)
 
-        var sr: Double = 44100, ch = 2, bits = 0
+        var sr: Double = 48000.0
+        var ch: Int = 2
+        var bits: Int = 0
         if let desc = formatDescs.first,
            let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc) {
-            if asbd.pointee.mSampleRate    > 0 { sr   = asbd.pointee.mSampleRate }
-            if asbd.pointee.mChannelsPerFrame > 0 { ch = Int(asbd.pointee.mChannelsPerFrame) }
-            bits = Int(asbd.pointee.mBitsPerChannel)   // 0 for AAC (lossy)
+            if asbd.pointee.mSampleRate > 0.0 {
+                sr = asbd.pointee.mSampleRate
+            }
+            if asbd.pointee.mChannelsPerFrame > 0 {
+                ch = Int(asbd.pointee.mChannelsPerFrame)
+            }
+            bits = Int(asbd.pointee.mBitsPerChannel)
         }
+
+        return (track, VideoFormat(sampleRate: sr, channels: ch, bitDepth: bits))
+    }
+
+    private static func videoMetadata(for url: URL) async throws -> Metadata {
+        let asset = AVURLAsset(url: url)
+        let (_, format) = try await videoAudioFormat(for: asset)
+        let duration = try await asset.load(.duration)
 
         return Metadata(
             codec:      codecNameVideo(for: url),
-            sampleRate: sr,
-            bitDepth:   bits,
-            channels:   ch,
+            sampleRate: format.sampleRate,
+            bitDepth:   format.bitDepth,
+            channels:   format.channels,
             duration:   CMTimeGetSeconds(duration)
         )
     }
 
-    private static func streamVideo(url: URL, handler: (UnsafePointer<Float>, Int) throws -> Void) async throws {
-        let asset       = AVURLAsset(url: url)
-        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
-        guard let track = audioTracks.first else {
-            throw AnalysisError.unsupportedFormat("No audio track in \(url.lastPathComponent)")
-        }
-
-        // Pin SR and channel count explicitly so the decoded output matches
-        // what we already told libebur128 (via videoMetadata).
-        let formatDescs = try await track.load(.formatDescriptions)
-        var nativeSR: Double = 48000
-        var nativeCh: Int    = 2
-        if let desc = formatDescs.first,
-           let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(desc) {
-            if asbd.pointee.mSampleRate      > 0 { nativeSR = asbd.pointee.mSampleRate }
-            if asbd.pointee.mChannelsPerFrame > 0 { nativeCh = Int(asbd.pointee.mChannelsPerFrame) }
-        }
+    private static func streamVideo(
+        url: URL,
+        handler: (UnsafePointer<Float>, Int) throws -> Void
+    ) async throws {
+        let asset = AVURLAsset(url: url)
+        let (track, format) = try await videoAudioFormat(for: asset)
 
         let reader = try AVAssetReader(asset: asset)
 
-        // Output: interleaved Float32 PCM at the file's native SR and channel count.
         let outputSettings: [String: Any] = [
             AVFormatIDKey:               Int(kAudioFormatLinearPCM),
-            AVSampleRateKey:             nativeSR,
-            AVNumberOfChannelsKey:       nativeCh,
+            AVSampleRateKey:             format.sampleRate,
+            AVNumberOfChannelsKey:       format.channels,
             AVLinearPCMBitDepthKey:      32,
             AVLinearPCMIsFloatKey:       true,
             AVLinearPCMIsNonInterleaved: false,
@@ -161,6 +192,8 @@ struct AudioReader {
         defer { reader.cancelReading() }
 
         while reader.status == .reading {
+            try Task.checkCancellation()
+
             guard let sampleBuf = output.copyNextSampleBuffer() else { break }
             let frameCount = CMSampleBufferGetNumSamples(sampleBuf)
             guard frameCount > 0 else { continue }
@@ -169,13 +202,18 @@ struct AudioReader {
             var dataPointer: UnsafeMutablePointer<CChar>?
             var totalLength = 0
             let err = CMBlockBufferGetDataPointer(
-                blockBuffer, atOffset: 0,
-                lengthAtOffsetOut: nil, totalLengthOut: &totalLength,
+                blockBuffer,
+                atOffset: 0,
+                lengthAtOffsetOut: nil,
+                totalLengthOut: &totalLength,
                 dataPointerOut: &dataPointer
             )
             guard err == kCMBlockBufferNoErr, let ptr = dataPointer, totalLength > 0 else { continue }
 
-            try ptr.withMemoryRebound(to: Float.self, capacity: totalLength / MemoryLayout<Float>.size) { floatPtr in
+            try ptr.withMemoryRebound(
+                to: Float.self,
+                capacity: totalLength / MemoryLayout<Float>.size
+            ) { floatPtr in
                 try handler(floatPtr, frameCount)
             }
         }
@@ -198,11 +236,16 @@ struct AudioReader {
         defer { ExtAudioFileDispose(ref) }
         var asbd = AudioStreamBasicDescription()
         var size = UInt32(MemoryLayout<AudioStreamBasicDescription>.size)
-        guard ExtAudioFileGetProperty(ref, kExtAudioFileProperty_FileDataFormat, &size, &asbd) == noErr else { return 0 }
+        guard ExtAudioFileGetProperty(ref, kExtAudioFileProperty_FileDataFormat, &size, &asbd) == noErr else {
+            return 0
+        }
         return Int(asbd.mBitsPerChannel)
     }
 
-    private static func codecNameAudio(for url: URL, format: AVAudioFormat) -> String {
+    private static func codecNameAudio(
+        for url: URL,
+        format: AVAudioFormat
+    ) -> String {
         switch url.pathExtension.lowercased() {
         case "flac":        return "FLAC"
         case "mp3":         return "MP3"
@@ -219,12 +262,12 @@ struct AudioReader {
 
     private static func codecNameVideo(for url: URL) -> String {
         switch url.pathExtension.lowercased() {
-        case "mp4":        return "MP4"
-        case "mov":        return "MOV"
-        case "m4v":        return "M4V"
-        case "mxf":        return "MXF"
-        case "avi":        return "AVI"
-        default:           return url.pathExtension.uppercased()
+        case "mp4":  return "MP4"
+        case "mov":  return "MOV"
+        case "m4v":  return "M4V"
+        case "mxf":  return "MXF"
+        case "avi":  return "AVI"
+        default:     return url.pathExtension.uppercased()
         }
     }
 }

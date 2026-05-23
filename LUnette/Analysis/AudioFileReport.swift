@@ -4,8 +4,8 @@ import Foundation
 
 enum ClipFlag: Equatable {
     case none
-    case warning   // TP > -1 dBTP
-    case error     // TP > 0 dBFS
+    case warning
+    case error
 }
 
 // MARK: - Audio File Report
@@ -23,7 +23,7 @@ struct AudioFileReport: Identifiable, Equatable {
 
     // Primary metrics
     let integratedLUFS: Double      // LUFS (negative number)
-    let lra: Double                 // LU  — from libebur128 directly
+    let lra: Double                 // LU — from libebur128 directly
     let lraLow: Double              // LUFS — 10th percentile of EBU 3342 gated short-term blocks
     let lraHigh: Double             // LUFS — 95th percentile of EBU 3342 gated short-term blocks
     let lraThreshold: Double        // LUFS — EBU 3342 relative gate applied to short-term blocks
@@ -31,23 +31,27 @@ struct AudioFileReport: Identifiable, Equatable {
 
     let truePeakL: Double           // dBTP
     let truePeakR: Double           // dBTP (equals truePeakL for mono)
+    let truePeakMax: Double         // dBTP — max across all channels, not just L/R
 
     // Secondary metrics
-    let plr: Double                 // dB  (Integrated − max TP)
+    let plr: Double                 // dB — true peak max minus integrated (positive = headroom)
     let momentaryMax: Double        // LUFS
     let shortTermMax: Double        // LUFS
     let clipFlag: ClipFlag
 
     // Convenience
     var filename: String { url.lastPathComponent }
-    var truePeakMax: Double { max(truePeakL, truePeakR) }
+
     /// Human-readable bit depth: "24-bit", "32-bit float", or "lossy" for 0
     var bitDepthLabel: String {
         guard bitDepth > 0 else { return "lossy" }
         return "\(bitDepth)-bit"
     }
 
-    static func == (lhs: AudioFileReport, rhs: AudioFileReport) -> Bool {
+    static func == (
+        lhs: AudioFileReport,
+        rhs: AudioFileReport
+    ) -> Bool {
         lhs.id == rhs.id
     }
 }
@@ -64,12 +68,23 @@ enum AnalysisError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .fileUnreadable(let url):  return "Cannot read file: \(url.lastPathComponent)"
-        case .tooShort(let d):          return "File too short (\(String(format: "%.2f", d)) s) — need ≥ 0.4 s"
-        case .unsupportedFormat(let s): return "Unsupported format: \(s)"
-        case .libebur128InitFailed:     return "libebur128 init failed"
-        case .libebur128AddFramesFailed(let code): return "libebur128 add_frames error \(code)"
-        case .noResult:                 return "Analysis returned no result"
+        case .fileUnreadable(let url):
+            return "Cannot read file: \(url.lastPathComponent)"
+
+        case .tooShort(let d):
+            return "File too short (\(String(format: "%.2f", d)) s) — need ≥ 0.4 s"
+
+        case .unsupportedFormat(let s):
+            return "Unsupported format: \(s)"
+
+        case .libebur128InitFailed:
+            return "libebur128 init failed"
+
+        case .libebur128AddFramesFailed(let code):
+            return "libebur128 add_frames error \(code)"
+
+        case .noResult:
+            return "Analysis returned no result"
         }
     }
 }
@@ -79,15 +94,12 @@ enum AnalysisError: LocalizedError {
 /// Broadcast: PASS / WARN / FAIL (actual delivery spec).
 /// Streaming: OK / LOUD / QUIET (platform normalises anyway — no delivery error).
 enum ComplianceBadge {
-    // Broadcast
-    case pass               // within ±1 LU of target + TP ok
-    case warn               // within ±2 LU of target + TP ok
-    case fail               // outside ±2 LU or TP too high
-
-    // Streaming
-    case ok                 // within ±1 LU of target
-    case loud               // louder than target (will be turned down)
-    case quiet              // quieter than target (will be turned up)
+    case pass
+    case warn
+    case fail
+    case ok
+    case loud
+    case quiet
 
     var label: String {
         switch self {
@@ -113,18 +125,16 @@ struct LoudnessStandard: Identifiable {
     let notes: String?
 
     func badge(for report: AudioFileReport) -> ComplianceBadge {
-        let delta  = report.integratedLUFS - targetLUFS   // positive = louder than target
-        let tpOk   = report.truePeakMax <= truePeakMax
+        let delta = report.integratedLUFS - targetLUFS
+        let tpOk  = report.truePeakMax <= truePeakMax
 
         if isBroadcast {
             if abs(delta) <= 1.0 && tpOk { return .pass }
             if abs(delta) <= 2.0 && tpOk { return .warn }
             return .fail
-        } else {
-            // Streaming: ±1 LU = OK, otherwise directional
-            if abs(delta) <= 1.0 { return .ok }
-            return delta > 0 ? .loud : .quiet
         }
+        if abs(delta) <= 1.0 { return .ok }
+        return delta > 0.0 ? .loud : .quiet
     }
 
     func gainDelta(for report: AudioFileReport) -> Double {
@@ -134,15 +144,95 @@ struct LoudnessStandard: Identifiable {
 
 extension LoudnessStandard {
     static let all: [LoudnessStandard] = [
-        .init(id: "ebu_r128",   name: "EBU R128",     targetLUFS: -23, lraMax: 20,  truePeakMax: -1, isBroadcast: true,  notes: "Broadcast EU"),
-        .init(id: "atsc_a85",   name: "ATSC A/85",    targetLUFS: -24, lraMax: nil, truePeakMax: -2, isBroadcast: true,  notes: "Broadcast US"),
-        .init(id: "arib",       name: "ARIB TR-B32",  targetLUFS: -24, lraMax: nil, truePeakMax: -1, isBroadcast: true,  notes: "Broadcast JP"),
-        .init(id: "spotify",    name: "Spotify",       targetLUFS: -14, lraMax: nil, truePeakMax: -1, isBroadcast: false, notes: nil),
-        .init(id: "apple",      name: "Apple Music",   targetLUFS: -16, lraMax: nil, truePeakMax: -1, isBroadcast: false, notes: nil),
-        .init(id: "youtube",    name: "YouTube",       targetLUFS: -14, lraMax: nil, truePeakMax: -1, isBroadcast: false, notes: nil),
-        .init(id: "tidal",      name: "Tidal",         targetLUFS: -14, lraMax: nil, truePeakMax: -1, isBroadcast: false, notes: nil),
-        .init(id: "amazon",     name: "Amazon Music",  targetLUFS: -14, lraMax: nil, truePeakMax: -2, isBroadcast: false, notes: nil),
-        .init(id: "deezer",     name: "Deezer",        targetLUFS: -15, lraMax: nil, truePeakMax: -1, isBroadcast: false, notes: nil),
-        .init(id: "soundcloud", name: "SoundCloud",    targetLUFS: -14, lraMax: nil, truePeakMax: -1, isBroadcast: false, notes: "Lossy encoding"),
+        .init(
+            id: "ebu_r128",
+            name: "EBU R128",
+            targetLUFS: -23.0,
+            lraMax: 20.0,
+            truePeakMax: -1.0,
+            isBroadcast: true,
+            notes: "Broadcast EU"
+        ),
+        .init(
+            id: "atsc_a85",
+            name: "ATSC A/85",
+            targetLUFS: -24.0,
+            lraMax: nil,
+            truePeakMax: -2.0,
+            isBroadcast: true,
+            notes: "Broadcast US"
+        ),
+        .init(
+            id: "arib",
+            name: "ARIB TR-B32",
+            targetLUFS: -24.0,
+            lraMax: nil,
+            truePeakMax: -1.0,
+            isBroadcast: true,
+            notes: "Broadcast JP"
+        ),
+        .init(
+            id: "spotify",
+            name: "Spotify",
+            targetLUFS: -14.0,
+            lraMax: nil,
+            truePeakMax: -1.0,
+            isBroadcast: false,
+            notes: nil
+        ),
+        .init(
+            id: "apple",
+            name: "Apple Music",
+            targetLUFS: -16.0,
+            lraMax: nil,
+            truePeakMax: -1.0,
+            isBroadcast: false,
+            notes: nil
+        ),
+        .init(
+            id: "youtube",
+            name: "YouTube",
+            targetLUFS: -14.0,
+            lraMax: nil,
+            truePeakMax: -1.0,
+            isBroadcast: false,
+            notes: nil
+        ),
+        .init(
+            id: "tidal",
+            name: "Tidal",
+            targetLUFS: -14.0,
+            lraMax: nil,
+            truePeakMax: -1.0,
+            isBroadcast: false,
+            notes: nil
+        ),
+        .init(
+            id: "amazon",
+            name: "Amazon Music",
+            targetLUFS: -14.0,
+            lraMax: nil,
+            truePeakMax: -2.0,
+            isBroadcast: false,
+            notes: nil
+        ),
+        .init(
+            id: "deezer",
+            name: "Deezer",
+            targetLUFS: -15.0,
+            lraMax: nil,
+            truePeakMax: -1.0,
+            isBroadcast: false,
+            notes: nil
+        ),
+        .init(
+            id: "soundcloud",
+            name: "SoundCloud",
+            targetLUFS: -14.0,
+            lraMax: nil,
+            truePeakMax: -1.0,
+            isBroadcast: false,
+            notes: "Lossy encoding"
+        )
     ]
 }
